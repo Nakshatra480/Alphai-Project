@@ -81,8 +81,48 @@ function LoadingSkeleton() {
   );
 }
 
+// Shown after 5s — tells user the Render free tier is waking up
+function WakeUpScreen({ elapsed }) {
+  // progress caps at 100% around 60 seconds
+  const progress = Math.min(100, Math.round((elapsed / 60) * 100));
+  return (
+    <div className="flex flex-col items-center justify-center gap-6 py-24 text-center">
+      {/* Spinning bitcoin icon */}
+      <div className="relative w-16 h-16">
+        <div className="absolute inset-0 rounded-full border-2 border-blue/20" />
+        <div
+          className="absolute inset-0 rounded-full border-2 border-transparent border-t-blue"
+          style={{ animation: "spin 1s linear infinite" }}
+        />
+        <div className="absolute inset-0 flex items-center justify-center">
+          <Bitcoin size={24} className="text-blue" />
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <p className="text-base font-semibold text-text">Waking up the server…</p>
+        <p className="text-sm text-muted max-w-sm">
+          The free hosting tier sleeps after inactivity.
+          <br />This takes <strong className="text-text">~30–50 seconds</strong> on first visit.
+        </p>
+      </div>
+
+      {/* Progress bar */}
+      <div className="w-64 flex flex-col gap-1.5">
+        <div className="h-1.5 rounded-full bg-surface border border-border overflow-hidden">
+          <div
+            className="h-full bg-blue rounded-full transition-all duration-1000"
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+        <span className="text-xs text-muted font-mono">{elapsed}s elapsed…</span>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
-  const { data, loading, error, lastRefresh, refresh } = useDashboard(60_000);
+  const { data, loading, error, lastRefresh, elapsed, refresh } = useDashboard(60_000);
 
   const prediction = data?.prediction ?? null;
   const chartData  = data?.chartData  ?? null;
@@ -112,8 +152,10 @@ export default function App() {
         {/* Error */}
         {error && <ErrorBanner error={error} />}
 
-        {/* Loading skeleton */}
-        {loading && !data && <LoadingSkeleton />}
+        {/* Loading state: generic skeleton for first ~5s, then cold-start screen */}
+        {loading && !data && (
+          elapsed < 5 ? <LoadingSkeleton /> : <WakeUpScreen elapsed={elapsed} />
+        )}
 
         {data && (
           <>

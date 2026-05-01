@@ -1,15 +1,13 @@
 /**
- * useDashboard.js  (production-ready)
+ * useDashboard.js
  * ------------------------------------
  * Single hook that drives the entire dashboard.
  *
  * Fetch strategy:
  *   - prediction + chart-data + history → every refresh (live data, 60s)
  *   - charts (matplotlib PNGs)          → once on mount only (static backtest output)
- *     Charts are ~207KB base64 — no reason to re-fetch every minute.
  *
- * Error handling: Promise.allSettled so one failing endpoint
- * doesn't prevent the rest of the dashboard from rendering.
+ * Timeouts are set to 90s to survive Render free-tier cold starts (~50s wake time).
  */
 
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -17,12 +15,16 @@ import axios from "axios";
 
 const API = import.meta.env.VITE_API_BASE || "";
 
+// Render free tier can take up to 50s to wake from sleep
+const LIVE_TIMEOUT   = 90_000;   // 90s — covers cold start
+const CHARTS_TIMEOUT = 120_000;  // 120s — charts are heavier (matplotlib render)
+
 // Fetch live endpoints (called every refresh)
 async function fetchLive() {
   const [predRes, chartDataRes, historyRes] = await Promise.allSettled([
-    axios.get(`${API}/api/prediction`,   { timeout: 20_000 }),
-    axios.get(`${API}/api/chart-data`,   { timeout: 20_000 }),
-    axios.get(`${API}/api/history`,      { timeout: 20_000 }),
+    axios.get(`${API}/api/prediction`,   { timeout: LIVE_TIMEOUT }),
+    axios.get(`${API}/api/chart-data`,   { timeout: LIVE_TIMEOUT }),
+    axios.get(`${API}/api/history`,      { timeout: LIVE_TIMEOUT }),
   ]);
 
   return {
@@ -35,7 +37,7 @@ async function fetchLive() {
 // Fetch static charts (called once — backtest doesn't change between refreshes)
 async function fetchCharts() {
   try {
-    const res = await axios.get(`${API}/api/charts`, { timeout: 30_000 });
+    const res = await axios.get(`${API}/api/charts`, { timeout: CHARTS_TIMEOUT });
     return res.data;
   } catch {
     return null;
@@ -44,24 +46,36 @@ async function fetchCharts() {
 
 export function useDashboard(refreshMs = 60_000) {
   const [data,        setData]        = useState(null);
-  const [charts,      setCharts]      = useState(null);   // separate — fetched once
+  const [charts,      setCharts]      = useState(null);
   const [loading,     setLoading]     = useState(true);
   const [chartsReady, setChartsReady] = useState(false);
   const [error,       setError]       = useState(null);
   const [lastRefresh, setLastRefresh] = useState(null);
-  const timerRef = useRef(null);
+  const [elapsed,     setElapsed]     = useState(0);   // seconds since load started
+  const timerRef   = useRef(null);
+  const elapsedRef = useRef(null);
 
   // Live data refresh
   const loadLive = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    setElapsed(0);
+
+    // Tick elapsed counter every second while loading
+    elapsedRef.current = setInterval(() => {
+      setElapsed(s => s + 1);
+    }, 1000);
+
     try {
-      setError(null);
       const result = await fetchLive();
       setData(prev => ({ ...prev, ...result }));
       setLastRefresh(new Date());
     } catch (e) {
       setError(e.message || "Failed to fetch live data");
     } finally {
+      clearInterval(elapsedRef.current);
       setLoading(false);
+      setElapsed(0);
     }
   }, []);
 
@@ -73,17 +87,15 @@ export function useDashboard(refreshMs = 60_000) {
   }, []);
 
   useEffect(() => {
-    // Initial load: live data + charts in parallel
     loadLive();
     loadCharts();
-
-    // Auto-refresh: live data only
     timerRef.current = setInterval(loadLive, refreshMs);
-    return () => clearInterval(timerRef.current);
+    return () => {
+      clearInterval(timerRef.current);
+      clearInterval(elapsedRef.current);
+    };
   }, [loadLive, loadCharts, refreshMs]);
 
-  // Merge charts into data object for BacktestCharts component
-  // charts=null → still loading; charts={} → error; charts={...} → ready
   const merged = data ? { ...data, charts: chartsReady ? charts : null } : null;
 
   return {
@@ -91,6 +103,7 @@ export function useDashboard(refreshMs = 60_000) {
     loading,
     error,
     lastRefresh,
-    refresh:     loadLive,   // manual refresh only hits live endpoints
+    elapsed,     // seconds elapsed since load started (for cold-start UX)
+    refresh:     loadLive,
   };
 }
