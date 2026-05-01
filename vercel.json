@@ -12,7 +12,7 @@
   "routes": [
     {
       "src": "/api/(.*)",
-      "dest": "https://alphai-btc-backend.onrender.com/api/$1"
+      "dest": "https://alphai-btc-nakshatra.onrender.com/api/$1"
     },
     {
       "src": "/(.*)",
@@ -20,6 +20,6 @@
     }
   ],
   "env": {
-    "VITE_API_BASE": "https://alphai-btc-backend.onrender.com"
+    "VITE_API_BASE": "https://alphai-btc-nakshatra.onrender.com"
   }
 }
