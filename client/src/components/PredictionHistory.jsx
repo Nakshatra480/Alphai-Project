@@ -6,7 +6,7 @@
  * Actual price is auto-filled when current BTC price becomes available.
  */
 
-import React, { useMemo } from "react";
+import React from "react";
 import { Clock, CheckCircle, XCircle, Database, FileText } from "lucide-react";
 
 function fmt(n, dec = 2) {
@@ -56,24 +56,9 @@ function SourceBadge({ source }) {
   );
 }
 
-export default function PredictionHistory({ history, currentPrice }) {
+export default function PredictionHistory({ history }) {
   const source      = history?.source ?? "file";
-  const rawPreds    = history?.predictions ?? [];
-
-  // Auto-fill actual price for predictions made > 1h ago using currentPrice
-  // (rough approximation — real fill would need retrospective API call)
-  const predictions = useMemo(() => {
-    const nowMs = Date.now();
-    return rawPreds.map((p) => {
-      if (p.actual != null) return p;
-      const ageMs = nowMs - new Date(p.timestamp).getTime();
-      // If prediction is > 55 minutes old and we have a live price, use it as "actual"
-      if (ageMs > 55 * 60 * 1000 && currentPrice != null) {
-        return { ...p, actual: currentPrice, actual_approx: true };
-      }
-      return p;
-    });
-  }, [rawPreds, currentPrice]);
+  const predictions = history?.predictions ?? [];
 
   // Coverage stats from visible history
   const withActual  = predictions.filter(p => p.actual != null);

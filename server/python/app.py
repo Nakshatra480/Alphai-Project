@@ -16,7 +16,7 @@ Endpoints:
 
 import json
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 from flask import Flask, jsonify, request
@@ -60,8 +60,8 @@ def save_to_file(pred: dict) -> None:
         f.write(json.dumps(record) + "\n")
 
 
-def load_from_file(limit: int = 200) -> list:
-    """Load recent predictions from local JSONL (newest first)."""
+def load_rows_from_file() -> list:
+    """Load ALL rows from JSONL history (oldest first)."""
     if not HISTORY_PATH.exists():
         return []
     rows = []
@@ -73,7 +73,77 @@ def load_from_file(limit: int = 200) -> list:
                     rows.append(json.loads(line))
                 except Exception:
                     pass
-    # newest first, capped at limit
+    return rows
+
+
+def fill_actuals_from_binance() -> None:
+    """
+    Retrospectively fill actual close prices for history predictions.
+
+    A prediction made at time T is forecasting the NEXT 1h bar, i.e. the bar
+    whose open_time = floor(T to hour) + 1h.  We fill `actual` with that
+    bar's close price once the bar has finished (open_time + 1h <= now).
+
+    Reads from and writes back to HISTORY_PATH.
+    """
+    rows = load_rows_from_file()
+    pending = [r for r in rows if r.get("actual") is None]
+    if not pending:
+        return
+
+    # Fetch enough bars to cover all pending predictions
+    try:
+        df = fetch_klines(limit=500)
+    except Exception as e:
+        print(f"[fill_actuals] Binance fetch failed: {e}")
+        return
+
+    # Build open_time_ms → close price lookup
+    bar_map: dict[int, float] = {}
+    for _, bar in df.iterrows():
+        ts_ms = int(bar["open_time"].timestamp()) * 1000
+        bar_map[ts_ms] = float(bar["close"])
+
+    now_utc = datetime.now(timezone.utc)
+    changed = False
+
+    for row in rows:
+        if row.get("actual") is not None:
+            continue
+        try:
+            pred_dt = datetime.fromisoformat(row["timestamp"])
+            if pred_dt.tzinfo is None:
+                pred_dt = pred_dt.replace(tzinfo=timezone.utc)
+        except Exception:
+            continue
+
+        # The bar we predicted opens at the next hour boundary after prediction time
+        hour_floor  = pred_dt.replace(minute=0, second=0, microsecond=0)
+        target_open = hour_floor + timedelta(hours=1)   # bar we predicted
+        target_close_time = target_open + timedelta(hours=1)  # when it closes
+
+        # Don't fill if the bar hasn't closed yet
+        if target_close_time > now_utc:
+            continue
+
+        target_ms = int(target_open.timestamp()) * 1000
+        if target_ms in bar_map:
+            row["actual"] = bar_map[target_ms]
+            changed = True
+
+    if changed:
+        with open(HISTORY_PATH, "w") as f:
+            for row in rows:
+                f.write(json.dumps(row) + "\n")
+
+
+def load_from_file(limit: int = 200) -> list:
+    """Load recent predictions, fill actuals first, return newest-first."""
+    try:
+        fill_actuals_from_binance()
+    except Exception as e:
+        print(f"[fill_actuals] error: {e}")
+    rows = load_rows_from_file()
     return list(reversed(rows[-limit:]))
 
 
@@ -187,8 +257,8 @@ def trigger_backtest():
 @app.get("/internal/history")
 def get_history():
     """
-    Return prediction history.
-    Priority: MongoDB (if configured) → local file (always available).
+    Return prediction history with actuals filled from Binance.
+    Priority: MongoDB → local file.
     """
     if MONGO_AVAILABLE:
         try:
@@ -198,7 +268,7 @@ def get_history():
         except Exception as e:
             print(f"[mongo] history load failed: {e}")
 
-    # File-based fallback
+    # File-based (fills actuals from Binance before returning)
     preds = load_from_file(limit=200)
     return jsonify({"predictions": preds, "source": "file"})
 
