@@ -30,12 +30,13 @@ const COLORS = {
 function fmtTime(str) {
   if (!str) return "";
   const d = new Date(str);
-  return d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
+  // Show date only every few bars — just time is fine for 50 bars
+  return d.toLocaleTimeString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false });
 }
 
 function fmtPrice(v) {
   if (v == null) return "—";
-  return "$" + Number(v).toLocaleString("en-US", { maximumFractionDigits: 0 });
+  return "$" + Number(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 const CustomTooltip = ({ active, payload, label }) => {
@@ -87,10 +88,10 @@ export default function PriceChart({ chartData }) {
   }, [bars, ribbon]);
 
   const prices = bars.map(b => b.close).filter(Boolean);
-  const yMin = prices.length ? Math.min(...prices) * 0.9985 : "auto";
-  const yMax = prices.length
-    ? Math.max(...prices, ribbon?.high_95 ?? 0) * 1.0015
-    : "auto";
+  const allLows  = prices.concat(ribbon?.low_95  != null ? [ribbon.low_95]  : []);
+  const allHighs = prices.concat(ribbon?.high_95 != null ? [ribbon.high_95] : []);
+  const yMin = allLows.length  ? Math.min(...allLows)  * 0.9985 : "auto";
+  const yMax = allHighs.length ? Math.max(...allHighs) * 1.0015 : "auto";
 
   if (!bars.length) {
     return (

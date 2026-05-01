@@ -20,9 +20,12 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-MONGO_URI  = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
+MONGO_URI  = os.getenv("MONGO_URI", "").strip()
 DB_NAME    = os.getenv("MONGO_DB",  "alphai_btc")
 COLLECTION = "predictions"
+
+if not MONGO_URI:
+    raise RuntimeError("MONGO_URI not set — MongoDB persistence disabled.")
 
 _client: Optional[MongoClient] = None
 

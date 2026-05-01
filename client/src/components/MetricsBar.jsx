@@ -40,9 +40,9 @@ export default function MetricsBar({ metrics }) {
   const winkler  = metrics?.mean_winkler_95;
   const n        = metrics?.n_predictions;
 
-  const coveragePct = coverage != null ? (coverage * 100).toFixed(1) + "%" : null;
-  const widthFmt    = width    != null ? "$" + width.toLocaleString("en-US", { maximumFractionDigits: 0 }) : null;
-  const winklerFmt  = winkler  != null ? "$" + winkler.toLocaleString("en-US", { maximumFractionDigits: 0 }) : null;
+  const coveragePct = coverage != null ? (coverage * 100).toFixed(2) + "%" : null;
+  const widthFmt    = width    != null ? "$" + width.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : null;
+  const winklerFmt  = winkler  != null ? "$" + winkler.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : null;
 
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -50,7 +50,7 @@ export default function MetricsBar({ metrics }) {
         icon={Target}
         label="Coverage (95% CI)"
         value={coveragePct}
-        sub="Target: ~95.0%"
+        sub={coverage != null ? `${(coverage * 100).toFixed(2)}% of actuals captured` : "Target: ~95.0%"}
         valueClass={coverageColor(coverage)}
       />
       <MetricCard
