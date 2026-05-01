@@ -153,8 +153,8 @@ app.get("/api/history", async (_req, res) => {
 const DIST = path.join(__dirname, "../../client/dist");
 app.use(express.static(DIST));
 
-// Catch-all: serve index.html for client-side routing
-app.get("*", (_req, res) => {
+// Catch-all: serve index.html for client-side routing (Express 5 compatible)
+app.use((_req, res) => {
   res.sendFile(path.join(DIST, "index.html"));
 });
 
