@@ -8,10 +8,10 @@
 import React from "react";
 import { RefreshCw, Bitcoin, Activity } from "lucide-react";
 import { useDashboard } from "./hooks/useDashboard";
-import MetricsBar        from "./components/MetricsBar";
-import PredictionCard    from "./components/PredictionCard";
-import PriceChart        from "./components/PriceChart";
-import BacktestCharts    from "./components/BacktestCharts";
+import MetricsBar from "./components/MetricsBar";
+import PredictionCard from "./components/PredictionCard";
+import PriceChart from "./components/PriceChart";
+import BacktestCharts from "./components/BacktestCharts";
 import PredictionHistory from "./components/PredictionHistory";
 
 function Header({ lastRefresh, onRefresh, loading }) {
@@ -125,16 +125,16 @@ export default function App() {
   const { data, loading, error, lastRefresh, elapsed, refresh } = useDashboard(60_000);
 
   const prediction = data?.prediction ?? null;
-  const chartData  = data?.chartData  ?? null;
-  const charts     = data?.charts     ?? null;
-  const history    = data?.history    ?? null;
+  const chartData = data?.chartData ?? null;
+  const charts = data?.charts ?? null;
+  const history = data?.history ?? null;
 
   // Metrics come from prediction response (which merges /api/backtest-metrics)
   const metrics = prediction ? {
-    coverage_95:     prediction.coverage_95,
-    avg_width:       prediction.avg_width,
+    coverage_95: prediction.coverage_95,
+    avg_width: prediction.avg_width,
     mean_winkler_95: prediction.mean_winkler_95,
-    n_predictions:   prediction.n_predictions,
+    n_predictions: prediction.n_predictions,
   } : null;
 
   return (
