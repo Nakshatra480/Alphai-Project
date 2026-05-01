@@ -1,25 +1,22 @@
 """
-app.py
-------
+app.py  (production-ready)
+--------------------------
 Flask microservice — exposes internal Python endpoints.
-Only called by the Express.js API gateway (not the browser directly).
 
-Endpoints:
-  GET /internal/health            → service health
-  GET /internal/prediction        → live GBM prediction (+ saves to history)
-  GET /internal/chart-data        → last 50 bars + ribbon
-  GET /internal/backtest-metrics  → pre-computed Part A metrics
-  GET /internal/charts            → matplotlib/seaborn PNGs as base64
-  GET /internal/history           → saved prediction history (file + mongo)
-  POST /internal/run-backtest     → trigger backtest (one-time setup)
+Production improvements:
+  - fill_actuals cached (TTL 5 min) — no Binance fetch on every /history call
+  - Save rate-limited: one record per 60s max per process
+  - History file pruned to last MAX_HISTORY_ROWS rows after each write
+  - Robust error handling throughout
 """
 
 import json
 import sys
+import time
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify
 from flask_cors import CORS
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -41,27 +38,22 @@ except Exception:
 # ──────────────────────────────────────────────
 # File-based prediction history (always available)
 # ──────────────────────────────────────────────
-HISTORY_PATH = Path(__file__).parents[2] / "data" / "prediction_history.jsonl"
+HISTORY_PATH     = Path(__file__).parents[2] / "data" / "prediction_history.jsonl"
+MAX_HISTORY_ROWS = 500          # keep only the latest N records on disk
+SAVE_INTERVAL_S  = 60           # minimum seconds between file saves (rate-limit)
+FILL_CACHE_TTL   = 300          # seconds to cache Binance bars for fill_actuals
+
 HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-
-def save_to_file(pred: dict) -> None:
-    """Append a prediction to the local JSONL history file."""
-    record = {
-        "timestamp":     datetime.now(timezone.utc).isoformat(),
-        "current_price": pred.get("current_price"),
-        "low_95":        pred.get("low_95"),
-        "high_95":       pred.get("high_95"),
-        "width":         pred.get("width"),
-        "sigma":         pred.get("sigma"),
-        "actual":        None,
-    }
-    with open(HISTORY_PATH, "a") as f:
-        f.write(json.dumps(record) + "\n")
+_last_save_ts:  float = 0.0    # epoch seconds of last save_to_file call
+_fill_cache_ts: float = 0.0    # epoch seconds of last fill_actuals run
+_fill_cache_hit_map: dict = {} # open_time_ms → close price, filled by last run
 
 
-def load_rows_from_file() -> list:
-    """Load ALL rows from JSONL history (oldest first)."""
+# ── helpers ───────────────────────────────────────────────
+
+def _read_all_rows() -> list:
+    """Read all JSONL rows from disk (oldest first)."""
     if not HISTORY_PATH.exists():
         return []
     rows = []
@@ -76,33 +68,74 @@ def load_rows_from_file() -> list:
     return rows
 
 
+def _write_rows(rows: list) -> None:
+    """Write rows to disk, pruning to MAX_HISTORY_ROWS."""
+    rows = rows[-MAX_HISTORY_ROWS:]
+    with open(HISTORY_PATH, "w") as f:
+        for row in rows:
+            f.write(json.dumps(row) + "\n")
+
+
+def save_to_file(pred: dict) -> None:
+    """
+    Append one prediction to the history file.
+    Rate-limited: at most one save per SAVE_INTERVAL_S seconds.
+    """
+    global _last_save_ts
+    now = time.time()
+    if now - _last_save_ts < SAVE_INTERVAL_S:
+        return                              # too soon — skip this save
+    _last_save_ts = now
+
+    record = {
+        "timestamp":     datetime.now(timezone.utc).isoformat(),
+        "current_price": pred.get("current_price"),
+        "low_95":        pred.get("low_95"),
+        "high_95":       pred.get("high_95"),
+        "width":         pred.get("width"),
+        "sigma":         pred.get("sigma"),
+        "actual":        None,
+    }
+    rows = _read_all_rows()
+    rows.append(record)
+    _write_rows(rows)
+
+
 def fill_actuals_from_binance() -> None:
     """
-    Retrospectively fill actual close prices for history predictions.
+    Fill actual close prices for predictions whose target 1h bar has closed.
 
-    A prediction made at time T is forecasting the NEXT 1h bar, i.e. the bar
-    whose open_time = floor(T to hour) + 1h.  We fill `actual` with that
-    bar's close price once the bar has finished (open_time + 1h <= now).
+    A prediction made at time T predicts the bar that opens at:
+        target_open = floor(T to hour) + 1h
 
-    Reads from and writes back to HISTORY_PATH.
+    The actual is that bar's close price (target_open + 1h must be <= now).
+
+    Results are cached for FILL_CACHE_TTL seconds — Binance is NOT fetched
+    on every call to /api/history.
     """
-    rows = load_rows_from_file()
+    global _fill_cache_ts, _fill_cache_hit_map
+
+    rows = _read_all_rows()
     pending = [r for r in rows if r.get("actual") is None]
     if not pending:
         return
 
-    # Fetch enough bars to cover all pending predictions
-    try:
-        df = fetch_klines(limit=500)
-    except Exception as e:
-        print(f"[fill_actuals] Binance fetch failed: {e}")
-        return
-
-    # Build open_time_ms → close price lookup
-    bar_map: dict[int, float] = {}
-    for _, bar in df.iterrows():
-        ts_ms = int(bar["open_time"].timestamp()) * 1000
-        bar_map[ts_ms] = float(bar["close"])
+    # Use cached bar_map if still fresh
+    now = time.time()
+    if now - _fill_cache_ts < FILL_CACHE_TTL and _fill_cache_hit_map:
+        bar_map = _fill_cache_hit_map
+    else:
+        try:
+            df = fetch_klines(limit=500)
+        except Exception as e:
+            print(f"[fill_actuals] Binance fetch failed: {e}")
+            return
+        bar_map = {}
+        for _, bar in df.iterrows():
+            ts_ms = int(bar["open_time"].timestamp() * 1000)
+            bar_map[ts_ms] = float(bar["close"])
+        _fill_cache_hit_map = bar_map
+        _fill_cache_ts = now
 
     now_utc = datetime.now(timezone.utc)
     changed = False
@@ -117,70 +150,64 @@ def fill_actuals_from_binance() -> None:
         except Exception:
             continue
 
-        # The bar we predicted opens at the next hour boundary after prediction time
-        hour_floor  = pred_dt.replace(minute=0, second=0, microsecond=0)
-        target_open = hour_floor + timedelta(hours=1)   # bar we predicted
-        target_close_time = target_open + timedelta(hours=1)  # when it closes
+        # Bar being predicted: opens at the next hour boundary
+        hour_floor       = pred_dt.replace(minute=0, second=0, microsecond=0)
+        target_open      = hour_floor + timedelta(hours=1)
+        target_close_utc = target_open + timedelta(hours=1)
 
-        # Don't fill if the bar hasn't closed yet
-        if target_close_time > now_utc:
-            continue
+        if target_close_utc > now_utc:
+            continue                        # bar hasn't closed yet — stay pending
 
-        target_ms = int(target_open.timestamp()) * 1000
+        target_ms = int(target_open.timestamp() * 1000)
         if target_ms in bar_map:
             row["actual"] = bar_map[target_ms]
             changed = True
 
     if changed:
-        with open(HISTORY_PATH, "w") as f:
-            for row in rows:
-                f.write(json.dumps(row) + "\n")
+        _write_rows(rows)
 
 
 def load_from_file(limit: int = 200) -> list:
-    """Load recent predictions, fill actuals first, return newest-first."""
+    """Fill actuals, then return newest-first, capped at limit."""
     try:
         fill_actuals_from_binance()
     except Exception as e:
         print(f"[fill_actuals] error: {e}")
-    rows = load_rows_from_file()
+    rows = _read_all_rows()
     return list(reversed(rows[-limit:]))
 
 
+# ──────────────────────────────────────────────
 app = Flask(__name__)
 CORS(app, origins="*")
 
 
-# ──────────────────────────────────────────────
-# Health check
-# ──────────────────────────────────────────────
-
 @app.get("/internal/health")
 def health():
-    return jsonify({"status": "ok", "mongo": MONGO_AVAILABLE,
-                    "file_history": HISTORY_PATH.exists()})
+    rows    = _read_all_rows()
+    filled  = sum(1 for r in rows if r.get("actual") is not None)
+    pending = len(rows) - filled
+    return jsonify({
+        "status":       "ok",
+        "mongo":        MONGO_AVAILABLE,
+        "file_history": HISTORY_PATH.exists(),
+        "history_rows": len(rows),
+        "filled":       filled,
+        "pending":      pending,
+    })
 
-
-# ──────────────────────────────────────────────
-# Live prediction
-# ──────────────────────────────────────────────
 
 @app.get("/internal/prediction")
 def get_prediction():
-    """
-    Fetch last 500 bars, run GBM, return 95% range.
-    ALWAYS saves to local file. Optionally saves to MongoDB too.
-    """
+    """Fetch last 500 bars, run GBM, save to file (+MongoDB), return result."""
     df   = fetch_klines(limit=500)
     pred = predict_range(df["close"].values)
 
-    # ── Always persist to file (Part C — no config needed) ──
     try:
-        save_to_file(pred)
+        save_to_file(pred)          # rate-limited, file-based
     except Exception as e:
         print(f"[file history] write failed: {e}")
 
-    # ── Also persist to MongoDB if configured ──
     if MONGO_AVAILABLE:
         try:
             save_prediction(pred)
@@ -190,13 +217,9 @@ def get_prediction():
     return jsonify(pred)
 
 
-# ──────────────────────────────────────────────
-# Chart data (last 50 bars + prediction ribbon)
-# ──────────────────────────────────────────────
-
 @app.get("/internal/chart-data")
 def get_chart_data():
-    """Last 50 OHLCV bars + current 95% ribbon for the React chart."""
+    """Last 50 OHLCV bars + current 95% ribbon."""
     df   = fetch_klines(limit=51)
     bars = (
         df.tail(50)
@@ -209,40 +232,27 @@ def get_chart_data():
     return jsonify({"bars": bars, "ribbon": pred})
 
 
-# ──────────────────────────────────────────────
-# Pre-computed backtest metrics
-# ──────────────────────────────────────────────
-
 @app.get("/internal/backtest-metrics")
 def get_metrics():
-    """Load pre-computed Part A metrics from disk (fast — no re-run)."""
+    """Load pre-computed Part A metrics (fast — no re-run)."""
     metrics = load_backtest_metrics()
     if not metrics:
-        return jsonify({"error": "Backtest not yet run. POST /internal/run-backtest first."}), 404
+        return jsonify({"error": "Run POST /internal/run-backtest first."}), 404
     return jsonify(metrics)
 
 
-# ──────────────────────────────────────────────
-# matplotlib + seaborn charts
-# ──────────────────────────────────────────────
-
 @app.get("/internal/charts")
 def get_charts():
-    """Generate and return all three charts as base64 PNG strings."""
+    """Return all three matplotlib/seaborn charts as base64 PNGs."""
     predictions = load_backtest_predictions()
     if not predictions:
         return jsonify({"error": "No backtest data found."}), 404
-    charts = generate_all_charts(predictions)
-    return jsonify(charts)
+    return jsonify(generate_all_charts(predictions))
 
-
-# ──────────────────────────────────────────────
-# Trigger backtest (admin — run once)
-# ──────────────────────────────────────────────
 
 @app.post("/internal/run-backtest")
 def trigger_backtest():
-    """Run the full backtest (blocking — takes ~60s). Call once at setup."""
+    """Run full backtest (blocking ~60s). Call once at setup."""
     try:
         metrics = run_backtest(verbose=False)
         return jsonify({"status": "done", **metrics})
@@ -250,14 +260,11 @@ def trigger_backtest():
         return jsonify({"error": str(e)}), 500
 
 
-# ──────────────────────────────────────────────
-# Prediction history (Part C)
-# ──────────────────────────────────────────────
-
 @app.get("/internal/history")
 def get_history():
     """
-    Return prediction history with actuals filled from Binance.
+    Return prediction history.
+    Actuals are filled from Binance historical bars (cached 5 min).
     Priority: MongoDB → local file.
     """
     if MONGO_AVAILABLE:
@@ -268,14 +275,9 @@ def get_history():
         except Exception as e:
             print(f"[mongo] history load failed: {e}")
 
-    # File-based (fills actuals from Binance before returning)
     preds = load_from_file(limit=200)
     return jsonify({"predictions": preds, "source": "file"})
 
-
-# ──────────────────────────────────────────────
-# Entry point
-# ──────────────────────────────────────────────
 
 if __name__ == "__main__":
     print("🐍 Flask microservice running on http://localhost:5001")

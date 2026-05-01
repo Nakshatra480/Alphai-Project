@@ -142,10 +142,7 @@ export default function App() {
 
             {/* ── Row 4: Prediction history (Part C) ── */}
             <section id="history">
-              <PredictionHistory
-                history={history}
-                currentPrice={prediction?.current_price ?? null}
-              />
+              <PredictionHistory history={history} />
             </section>
           </>
         )}
