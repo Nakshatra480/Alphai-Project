@@ -5,10 +5,11 @@
 @layer base {
   *, *::before, *::after { box-sizing: border-box; }
 
-  html { scroll-behavior: smooth; }
+  html { scroll-behavior: smooth; overflow-x: hidden; }
 
   body {
     margin: 0;
+    overflow-x: hidden;
     background-color: #0d1117;
     color: #c9d1d9;
     font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
@@ -16,7 +17,7 @@
     min-height: 100vh;
   }
 
-  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar { width: 6px; height: 0; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
   ::-webkit-scrollbar-thumb:hover { background: #484f58; }
