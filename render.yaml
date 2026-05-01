@@ -1,5 +1,6 @@
 # Render deployment config
-# Both Flask + Express run from this file via start.sh
+# Flask + Express run via start.sh
+# React frontend is built here and served by Express as static files
 
 services:
   - type: web
@@ -8,12 +9,15 @@ services:
     buildCommand: |
       pip install -r server/python/requirements.txt
       cd server/node && npm install
+      cd ../../client && npm install && npm run build
     startCommand: bash start.sh
     envVars:
       - key: PORT
         value: 4000
       - key: FLASK_URL
         value: http://localhost:5001
+      - key: PYTHON_VERSION
+        value: 3.11.0
       - key: MONGO_URI
-        sync: false   # set manually in Render dashboard
+        sync: false   # set manually in Render dashboard if you want MongoDB
     plan: free

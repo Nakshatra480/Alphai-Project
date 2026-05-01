@@ -6,7 +6,7 @@
  */
 
 import React from "react";
-import { RefreshCw, Bitcoin, Activity, Github } from "lucide-react";
+import { RefreshCw, Bitcoin, Activity } from "lucide-react";
 import { useDashboard } from "./hooks/useDashboard";
 import MetricsBar        from "./components/MetricsBar";
 import PredictionCard    from "./components/PredictionCard";
@@ -137,7 +137,7 @@ export default function App() {
 
             {/* ── Row 3: matplotlib / seaborn backtest analysis ── */}
             <section id="analysis">
-              <BacktestCharts charts={charts} />
+              <BacktestCharts charts={charts} metrics={metrics} />
             </section>
 
             {/* ── Row 4: Prediction history (Part C) ── */}
@@ -152,14 +152,9 @@ export default function App() {
       <footer className="border-t border-border mt-12 py-5">
         <div className="max-w-7xl mx-auto px-4 md:px-6 flex items-center justify-between text-xs text-muted">
           <span>AlphaI × Polaris Build Challenge — BTC 95% CI Forecaster</span>
-          <a
-            href="https://github.com"
-            target="_blank"
-            rel="noreferrer"
-            className="flex items-center gap-1.5 hover:text-text transition-colors"
-          >
-            <Github size={13} /> Source
-          </a>
+          <span className="flex items-center gap-1.5">
+            Powered by Binance Vision API + GBM
+          </span>
         </div>
       </footer>
     </div>

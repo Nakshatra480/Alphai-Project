@@ -1,6 +1,7 @@
 const express  = require("express");
 const axios    = require("axios");
 const cors     = require("cors");
+const path     = require("path");
 const mongoose = require("mongoose");
 require("dotenv").config({ path: require("path").join(__dirname, "../../.env") });
 
@@ -145,9 +146,23 @@ app.get("/api/history", async (_req, res) => {
 });
 
 // ─────────────────────────────────────────────
+// Serve built React frontend (production)
+// When deployed on Render, Express serves the
+// Vite-built client/dist as static files.
+// ─────────────────────────────────────────────
+const DIST = path.join(__dirname, "../../client/dist");
+app.use(express.static(DIST));
+
+// Catch-all: serve index.html for client-side routing
+app.get("*", (_req, res) => {
+  res.sendFile(path.join(DIST, "index.html"));
+});
+
+// ─────────────────────────────────────────────
 // Start
 // ─────────────────────────────────────────────
 app.listen(PORT, () => {
   console.log(`🟩 Express API gateway → http://localhost:${PORT}`);
   console.log(`   Proxying Flask at   → ${FLASK_URL}`);
+  console.log(`   Serving frontend    → ${DIST}`);
 });
