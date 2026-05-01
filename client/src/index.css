@@ -1,0 +1,91 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  *, *::before, *::after { box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    margin: 0;
+    background-color: #0d1117;
+    color: #c9d1d9;
+    font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+  }
+
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: #0d1117; }
+  ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+}
+
+@layer components {
+  /* ── Card ── */
+  .card {
+    @apply bg-surface border border-border rounded-xl p-5;
+  }
+
+  /* ── Metric card ── */
+  .metric-card {
+    @apply card flex flex-col gap-1 transition-all duration-200 hover:border-blue/40;
+  }
+
+  .metric-label {
+    @apply text-xs font-medium text-muted uppercase tracking-wider;
+  }
+
+  .metric-value {
+    @apply text-2xl font-semibold font-mono;
+  }
+
+  /* ── Badge ── */
+  .badge {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium border;
+  }
+
+  .badge-green  { @apply bg-green/10  text-green  border-green/20; }
+  .badge-red    { @apply bg-red/10    text-red    border-red/20; }
+  .badge-blue   { @apply bg-blue/10   text-blue   border-blue/20; }
+  .badge-yellow { @apply bg-yellow/10 text-yellow border-yellow/20; }
+
+  /* ── Button ── */
+  .btn {
+    @apply inline-flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm
+           transition-all duration-150 cursor-pointer border border-transparent;
+  }
+
+  .btn-primary {
+    @apply btn bg-blue text-bg hover:bg-blue/90 active:scale-95;
+  }
+
+  .btn-ghost {
+    @apply btn border-border text-muted hover:text-text hover:border-blue/40 active:scale-95;
+  }
+
+  /* ── Section heading ── */
+  .section-title {
+    @apply text-sm font-semibold text-muted uppercase tracking-widest mb-3;
+  }
+
+  /* ── Divider ── */
+  .divider { @apply border-t border-border my-6; }
+
+  /* ── Pulse dot ── */
+  .live-dot {
+    @apply w-2 h-2 rounded-full bg-green animate-pulse;
+  }
+}
+
+@layer utilities {
+  .text-gradient {
+    background: linear-gradient(135deg, #58a6ff, #bc8cff);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .glow-blue   { box-shadow: 0 0 20px rgba(88, 166, 255, 0.15); }
+  .glow-green  { box-shadow: 0 0 20px rgba(63, 185, 80, 0.15); }
+}

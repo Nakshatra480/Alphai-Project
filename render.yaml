@@ -1,0 +1,19 @@
+# Render deployment config
+# Both Flask + Express run from this file via start.sh
+
+services:
+  - type: web
+    name: alphai-btc-backend
+    runtime: python
+    buildCommand: |
+      pip install -r server/python/requirements.txt
+      cd server/node && npm install
+    startCommand: bash start.sh
+    envVars:
+      - key: PORT
+        value: 4000
+      - key: FLASK_URL
+        value: http://localhost:5001
+      - key: MONGO_URI
+        sync: false   # set manually in Render dashboard
+    plan: free
