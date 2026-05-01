@@ -120,3 +120,8 @@
 {"timestamp": "2026-05-01T18:14:21.257869+00:00", "current_price": 78535.49, "low_95": 77805.51, "high_95": 79266.67, "width": 1461.16, "sigma": 0.00360175, "actual": null}
 {"timestamp": "2026-05-01T18:14:21.882695+00:00", "current_price": 78535.49, "low_95": 77812.81, "high_95": 79286.13, "width": 1473.31, "sigma": 0.00360175, "actual": null}
 {"timestamp": "2026-05-01T18:14:41.064229+00:00", "current_price": 78527.37, "low_95": 77799.73, "high_95": 79282.3, "width": 1482.57, "sigma": 0.0036044, "actual": null}
+{"timestamp": "2026-05-01T18:15:41.036070+00:00", "current_price": 78565.67, "low_95": 77829.35, "high_95": 79304.89, "width": 1475.54, "sigma": 0.00359318, "actual": null}
+{"timestamp": "2026-05-01T18:16:16.744473+00:00", "current_price": 78526.2, "low_95": 77803.4, "high_95": 79259.07, "width": 1455.67, "sigma": 0.0036048, "actual": null}
+{"timestamp": "2026-05-01T18:16:17.360859+00:00", "current_price": 78526.2, "low_95": 77807.64, "high_95": 79239.31, "width": 1431.67, "sigma": 0.0036048, "actual": null}
+{"timestamp": "2026-05-01T18:17:16.988314+00:00", "current_price": 78515.43, "low_95": 77784.79, "high_95": 79231.85, "width": 1447.06, "sigma": 0.00360857, "actual": null}
+{"timestamp": "2026-05-01T18:18:17.025222+00:00", "current_price": 78531.11, "low_95": 77797.66, "high_95": 79245.82, "width": 1448.16, "sigma": 0.00360316, "actual": null}
