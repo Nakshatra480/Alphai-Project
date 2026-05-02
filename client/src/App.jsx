@@ -28,7 +28,7 @@ function Header({ lastRefresh, onRefresh, loading }) {
             <Bitcoin size={16} className="text-blue" />
           </div>
           <div>
-            <span className="font-semibold text-sm text-text">Alpha<span className="text-blue font-bold">I</span> BTC Forecaster</span>
+            <span className="font-semibold text-sm text-text">Alphai BTC Forecaster</span>
             <span className="ml-2 text-xs text-muted hidden sm:inline">
               × Polaris Challenge
             </span>
@@ -193,7 +193,7 @@ export default function App() {
       {/* Footer */}
       <footer className="border-t border-border mt-12 py-5">
         <div className="max-w-7xl mx-auto px-4 md:px-6 flex items-center justify-between text-xs text-muted">
-          <span>Alpha<span style={{color:"#58a6ff",fontWeight:700}}>I</span> × Polaris Build Challenge — BTC 95% CI Forecaster</span>
+          <span>Alphai × Polaris Build Challenge — BTC 95% CI Forecaster</span>
           <span className="flex items-center gap-1.5">
             Powered by Binance Vision API + GBM
           </span>
