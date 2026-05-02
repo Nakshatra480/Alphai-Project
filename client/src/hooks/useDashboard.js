@@ -5,9 +5,13 @@
  *
  * Fetch strategy:
  *   - prediction + chart-data + history → every refresh (live data, 60s)
- *   - charts (matplotlib PNGs)          → once on mount only (static backtest output)
+ *   - charts (matplotlib PNGs)          → once on mount only
  *
- * Timeouts are set to 90s to survive Render free-tier cold starts (~50s wake time).
+ * Cold-start resilience:
+ *   - Timeouts are 90s to survive Render free-tier wake (~50s)
+ *   - If Flask hasn't finished initializing, prediction returns null.
+ *     We auto-retry up to MAX_RETRIES times with RETRY_DELAY between
+ *     each attempt — no manual page reload needed.
  */
 
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -15,11 +19,12 @@ import axios from "axios";
 
 const API = import.meta.env.VITE_API_BASE || "";
 
-// Render free tier can take up to 50s to wake from sleep
-const LIVE_TIMEOUT   = 90_000;   // 90s — covers cold start
-const CHARTS_TIMEOUT = 120_000;  // 120s — charts are heavier (matplotlib render)
+const LIVE_TIMEOUT   = 90_000;   // 90s — covers Render cold start
+const CHARTS_TIMEOUT = 120_000;  // 120s — matplotlib render is heavier
+const MAX_RETRIES    = 6;        // retry up to 6× before giving up
+const RETRY_DELAY    = 5_000;    // 5s between retries
 
-// Fetch live endpoints (called every refresh)
+// Fetch live endpoints
 async function fetchLive() {
   const [predRes, chartDataRes, historyRes] = await Promise.allSettled([
     axios.get(`${API}/api/prediction`,   { timeout: LIVE_TIMEOUT }),
@@ -34,7 +39,7 @@ async function fetchLive() {
   };
 }
 
-// Fetch static charts (called once — backtest doesn't change between refreshes)
+// Fetch static charts once on mount
 async function fetchCharts() {
   try {
     const res = await axios.get(`${API}/api/charts`, { timeout: CHARTS_TIMEOUT });
@@ -51,35 +56,58 @@ export function useDashboard(refreshMs = 60_000) {
   const [chartsReady, setChartsReady] = useState(false);
   const [error,       setError]       = useState(null);
   const [lastRefresh, setLastRefresh] = useState(null);
-  const [elapsed,     setElapsed]     = useState(0);   // seconds since load started
-  const timerRef   = useRef(null);
-  const elapsedRef = useRef(null);
+  const [elapsed,     setElapsed]     = useState(0);
 
-  // Live data refresh
+  const timerRef      = useRef(null);  // auto-refresh interval
+  const elapsedRef    = useRef(null);  // elapsed seconds interval
+  const retryTimer    = useRef(null);  // retry setTimeout
+  const retryCount    = useRef(0);     // how many retries attempted
+
   const loadLive = useCallback(async () => {
     setLoading(true);
     setError(null);
     setElapsed(0);
 
-    // Tick elapsed counter every second while loading
-    elapsedRef.current = setInterval(() => {
-      setElapsed(s => s + 1);
-    }, 1000);
+    // Tick elapsed every second while loading
+    clearInterval(elapsedRef.current);
+    elapsedRef.current = setInterval(() => setElapsed(s => s + 1), 1000);
 
     try {
       const result = await fetchLive();
-      setData(prev => ({ ...prev, ...result }));
-      setLastRefresh(new Date());
+
+      if (result.prediction) {
+        // ✅ Flask is ready — update state normally
+        retryCount.current = 0;
+        setData(prev => ({ ...prev, ...result }));
+        setLastRefresh(new Date());
+        clearInterval(elapsedRef.current);
+        setLoading(false);
+        setElapsed(0);
+      } else if (retryCount.current < MAX_RETRIES) {
+        // ⏳ Flask not ready yet — silent retry
+        retryCount.current += 1;
+        clearInterval(elapsedRef.current);
+        // Keep loading=true, schedule another attempt
+        clearTimeout(retryTimer.current);
+        retryTimer.current = setTimeout(() => loadLive(), RETRY_DELAY);
+      } else {
+        // ❌ Exhausted retries — show whatever we got
+        retryCount.current = 0;
+        setData(prev => ({ ...prev, ...result }));
+        setLastRefresh(new Date());
+        clearInterval(elapsedRef.current);
+        setLoading(false);
+        setElapsed(0);
+      }
     } catch (e) {
-      setError(e.message || "Failed to fetch live data");
-    } finally {
       clearInterval(elapsedRef.current);
+      setError(e.message || "Failed to fetch live data");
       setLoading(false);
       setElapsed(0);
     }
   }, []);
 
-  // Charts fetch — once on mount
+  // Charts — once on mount
   const loadCharts = useCallback(async () => {
     const result = await fetchCharts();
     setCharts(result);
@@ -93,6 +121,7 @@ export function useDashboard(refreshMs = 60_000) {
     return () => {
       clearInterval(timerRef.current);
       clearInterval(elapsedRef.current);
+      clearTimeout(retryTimer.current);
     };
   }, [loadLive, loadCharts, refreshMs]);
 
@@ -103,7 +132,7 @@ export function useDashboard(refreshMs = 60_000) {
     loading,
     error,
     lastRefresh,
-    elapsed,     // seconds elapsed since load started (for cold-start UX)
+    elapsed,
     refresh:     loadLive,
   };
 }

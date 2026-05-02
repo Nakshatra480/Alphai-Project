@@ -8,8 +8,8 @@ python3 app.py &
 FLASK_PID=$!
 
 echo "   Flask PID: $FLASK_PID"
-echo "   Waiting 3s for Flask to boot..."
-sleep 3
+echo "   Waiting 20s for Flask to fully initialize (fetching Binance data + backtest)..."
+sleep 20
 
 echo "🟩 Starting Express API gateway..."
 cd ../../server/node
